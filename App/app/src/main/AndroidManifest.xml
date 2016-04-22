@@ -45,6 +45,9 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".activity.ScannerActivity"
+            android:screenOrientation="portrait"/>
+
     </application>
 
     <uses-feature android:name="android.hardware.camera.full" />

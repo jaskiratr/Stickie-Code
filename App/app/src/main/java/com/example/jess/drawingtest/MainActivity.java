@@ -66,25 +66,33 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.Surface;
+import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.GridView;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.example.jess.drawingtest.ColorPickerDialog.OnColorChangedListener;
+import com.example.jess.drawingtest.activity.ScannerActivity;
 import com.github.nkzawa.emitter.Emitter;
 import com.github.nkzawa.socketio.client.IO;
 import com.github.nkzawa.socketio.client.Socket;
+import com.google.android.gms.vision.CameraSource;
+import com.google.android.gms.vision.barcode.BarcodeDetector;
+import com.google.zxing.qrcode.QRCodeReader;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -131,12 +139,21 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
     private GridView gridviewGallery;
     private ArrayList<String> filePaths = new ArrayList<String>();// list of file paths
     File[] listFile;
-    private static int RESULT_LOAD_IMG = 1;
+    private static final int RESULT_LOAD_IMG = 1;
+    private static final int RESULT_QRCODE = 2;
     private Paint mPaint;
     private AutoFitTextureView mTextureView;
     private File mFile;
     private static String TAG = "MainActivity";
 
+    //Scanner
+    private TextView barcodeInfo;
+    private Button scan_btn;
+    private BarcodeDetector barcodeDetector;
+    private CameraSource cameraSource;
+    private SurfaceView cameraView;
+
+    private Button btn_rgb;
 
     private DrawerLayout mDrawerLayout;
     private ListView mDrawerList;
@@ -146,6 +163,11 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
     private ActionBarDrawerToggle mDrawerToggle;
     private SharedPreferences sessionIdPref;
     private SharedPreferences teamIdPref;
+
+    private ArrayList<Boolean> colorSelectState;
+    // Color Pallette
+    private Button btn_color;
+    private OnColorChangedListener mListener;
 
     /**
      * An additional thread for running tasks that shouldn't block the UI.
@@ -259,23 +281,26 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         ORIENTATIONS.append(Surface.ROTATION_270, 180);
     }
 
+    private QRCodeReader mQrReader;
+    private int[] colorArray;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        mQrReader = new QRCodeReader();
+
+
         try {
-            mSensorManager = (SensorManager)getSystemService(SENSOR_SERVICE);
+            mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
             accelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
             magnetometer = mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
         } catch (Exception e) {
             Toast.makeText(this, "Hardware compatibility issue", Toast.LENGTH_LONG).show();
         }
 
-
-
-
-        mDetector = new GestureDetectorCompat(this,this);
+        mDetector = new GestureDetectorCompat(this, this);
         mDetector.setOnDoubleTapListener(this);
 
         Intent intent = getIntent();
@@ -302,7 +327,106 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         delBtn = (Button) findViewById(R.id.del_btn);
         buttonCheck = (Button) findViewById(R.id.buttonCheck);
 
+        //Camera View
         mTextureView = (AutoFitTextureView) findViewById(R.id.texture);
+
+        //Scanner
+        /*cameraView = (SurfaceView) findViewById(R.id.camera_view);*/
+
+
+
+        barcodeInfo = (TextView) findViewById(R.id.tv_barcode);
+        scan_btn = (Button) findViewById(R.id.scanner_btn);
+//        btn_rgb = (Button) findViewById(R.id.rgb_btn);
+
+        scan_btn.setOnClickListener(this);
+//        btn_rgb.setOnClickListener(this);
+
+        // Color Pallette
+//        btn_color = (Button) findViewById(R.id.btn_color);
+//        btn_color.setOnClickListener(this);
+        //Color Palette State
+        colorSelectState = new ArrayList<>();
+        colorArray = this.getResources().getIntArray(R.array.demo_colors);
+        for(int i = 0; i < colorArray.length; i++ ){
+            if(i == 0){
+                colorSelectState.add(true);
+            }else{
+                colorSelectState.add(false);
+            }
+        }
+        /*barcodeDetector =
+                new BarcodeDetector.Builder(this)
+                        .setBarcodeFormats(Barcode.QR_CODE)
+                        .build();
+
+        cameraSource = new CameraSource
+                .Builder(this, barcodeDetector)
+                .build();
+
+        cameraView.getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(SurfaceHolder holder) {
+
+                Log.d(TAG, "Surface Created");
+
+                try {
+                    if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                        // TODO: Consider calling
+                        //    ActivityCompat#requestPermissions
+                        // here to request the missing permissions, and then overriding
+                        //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                        //                                          int[] grantResults)
+                        // to handle the case where the user grants the permission. See the documentation
+                        // for ActivityCompat#requestPermissions for more details.
+                        return;
+                    }
+                    cameraSource.start(cameraView.getHolder());
+                } catch (IOException ie) {
+                    Log.e("CAMERA SOURCE", ie.getMessage());
+                }
+            }
+
+            @Override
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+
+                Log.d(TAG, "Surface Changed");
+            }
+
+            @Override
+            public void surfaceDestroyed(SurfaceHolder holder) {
+
+                Log.d(TAG, "Surface Destroyed");
+
+                cameraSource.stop();
+            }
+        });
+
+        barcodeDetector.setProcessor(new Detector.Processor<Barcode>() {
+            @Override
+            public void release() {
+            }
+
+            @Override
+            public void receiveDetections(Detector.Detections<Barcode> detections) {
+                final SparseArray<Barcode> barcodes = detections.getDetectedItems();
+
+                if (barcodes.size() != 0) {
+                    barcodeInfo.post(new Runnable() {    // Use the post method of the TextView
+                        public void run() {
+                            barcodeInfo.setText(    // Update the TextView
+                                    barcodes.valueAt(0).displayValue
+                            );
+                        }
+                    });
+                }
+            }
+        });
+
+        cameraSource.stop();
+        cameraSource.release();
+        barcodeDetector.release();*/
+
 
         // onClickListener
         galBtn.setOnClickListener(this);
@@ -332,7 +456,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         panBtn.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                switch(event.getAction()) {
+                switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
                         // Start
                         Log.d("Hold: ", "down");
@@ -353,6 +477,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
             }
         });
         buttonCheck.setOnClickListener(this);
+        scan_btn.setOnClickListener(this);
 
         drawView = (DrawingView) findViewById(R.id.drawing);
         LinearLayout paintLayout = (LinearLayout) findViewById(R.id.paint_colors);
@@ -361,27 +486,6 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         currPaint.setImageResource(R.drawable.paint_pressed);
         drawView.setBrushSize(smallBrush);
         metrics = getResources().getDisplayMetrics();
-
-        // ON TOUCH LISTENER
-
-
-//        swipeTextView = (TextView)findViewById(R.id.swipeText);
-//        swipeTextView.setOnTouchListener(new View.OnTouchListener() {
-//            @Override
-//            public boolean onTouch(View v, MotionEvent event) {
-//                Log.d("Hold: ", "down");
-//                return false;
-//            }
-//        });
-//        swipeTextView.setOnTouchListener(new View.OnTouchListener()
-//        {
-//            @Override
-//            public boolean onTouch(View v, MotionEvent event)
-//            {
-//                myGestDetector.onTouchEvent(event);
-//                return false;
-//            }
-//        });
 
         // Grid view Set On Click Listener
         gridviewGallery.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -428,8 +532,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
 
         try {
             mSocket = IO.socket("https://stickie2-jaskiratr.c9users.io:8081");
-        }
-        catch (URISyntaxException e) {
+        } catch (URISyntaxException e) {
 
         }
 
@@ -437,18 +540,10 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
 
         mSocket.on("findColor", onNewMessage);
         if (mSocket.connected()) {
-            isConnected= true;
-        }else {
+            isConnected = true;
+        } else {
             isConnected = false;
         }
-//        runOnUiThread(new Runnable() {
-//            @Override
-//            public void run() {
-
-//                mSocket.emit("device_id", "phoneA");
-//            }
-//        });
-
 
         mMenuTitles = getResources().getStringArray(R.array.menu_array);
         mDrawerLayout = (DrawerLayout) findViewById(R.id.drawer_layout);
@@ -464,7 +559,6 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         // set up the drawer's list view with items and click listener
         mDrawerList.setAdapter(new ArrayAdapter<String>(this,
                 R.layout.drawer_list_item, mMenuTitles));
-//        mDrawerList.setItemsCanFocus(true);
 
         mDrawerList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
@@ -476,24 +570,22 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         });
         getSupportActionBar().setDisplayOptions(ActionBar.DISPLAY_SHOW_CUSTOM);
 
-        LayoutInflater inflator = (LayoutInflater) this .getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        LayoutInflater inflator = (LayoutInflater) this.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         ViewGroup parent = (ViewGroup) findViewById(R.id.action_bar);
-        View v = inflator.inflate(R.layout.actionbar_layout, parent,false);
+        View v = inflator.inflate(R.layout.actionbar_layout, parent, false);
         getSupportActionBar().setCustomView(v);
 
-        v.setOnTouchListener(new Swipe_listener(getApplicationContext()){
+        v.setOnTouchListener(new Swipe_listener(getApplicationContext()) {
 
             public void onSwipeRight() {
-                 Toast.makeText(MainActivity.this, "right", Toast.LENGTH_SHORT).show();
-                    postNote();
-//                Intent miN=new Intent(MainActivity.this,Prefer_circular.class);
-//                startActivity(miN);
-            }
-            public void onSwipeLeft() {
-                   Toast.makeText(MainActivity.this, "left", Toast.LENGTH_SHORT).show();
+//                Toast.makeText(MainActivity.this, "right", Toast.LENGTH_SHORT).show();
                 postNote();
             }
 
+            public void onSwipeLeft() {
+//                Toast.makeText(MainActivity.this, "left", Toast.LENGTH_SHORT).show();
+                postNote();
+            }
 
             public boolean onTouch(View v, MotionEvent event) {
                 return gestureDetector.onTouchEvent(event);
@@ -531,6 +623,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
 
 
     }
+
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         MenuInflater inflater = getMenuInflater();
@@ -555,7 +648,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
             return true;
         }
         // Handle action buttons
-        switch(item.getItemId()) {
+        switch (item.getItemId()) {
             case R.id.action_websearch:
                 // create intent to perform web search for this planet
                 Intent intent = new Intent(Intent.ACTION_WEB_SEARCH);
@@ -589,39 +682,41 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         // update the main content by replacing fragments
         switch (mMenuTitles[position]) {
             case "Connect":
-                connectSessionDialog();
+//                connectSessionDialog();
+                Intent scanIntent = new Intent(MainActivity.this, ScannerActivity.class);
+                startActivityForResult(scanIntent, RESULT_QRCODE);
                 mDrawerLayout.closeDrawer(mDrawerList);
                 break;
-            case "Disconnect":
-                connectSessionDialog();
+            case "End Session":
+                mSocket.emit("endSession", "true");
                 mDrawerLayout.closeDrawer(mDrawerList);
                 break;
             case "Recenter":
+                mSocket.emit("recenter", "true");
                 mDrawerLayout.closeDrawer(mDrawerList);
                 break;
             case "Invite":
+                SharedPreferences settings = getSharedPreferences("UserInfo", 0);
+                Intent intent2 = new Intent(); intent2.setAction(Intent.ACTION_SEND);
+                intent2.setType("text/plain");
+                intent2.putExtra(Intent.EXTRA_TEXT,
+                        settings.getString("team_id", "")+
+                        " invited to join a Stickie session. "+
+                        "\n"+
+                        "Follow the link to join: "+"\n"+
+                        "https://stickie2-jaskiratr.c9users.io/"+ settings.getString("session_id", ""));
+                startActivity(Intent.createChooser(intent2, "Share via"));
+
                 mDrawerLayout.closeDrawer(mDrawerList);
                 break;
-            default:  mDrawerLayout.closeDrawer(mDrawerList);
+            default:
+                mDrawerLayout.closeDrawer(mDrawerList);
                 break;
         }
-//        Fragment fragment = new PlanetFragment();
-//        Bundle args = new Bundle();
-//        args.putInt(PlanetFragment.ARG_PLANET_NUMBER, position);
-//        fragment.setArguments(args);
-//
-//        FragmentManager fragmentManager = getFragmentManager();
-//        fragmentManager.beginTransaction().replace(R.id.content_frame, fragment).commit();
-//
-//        // update selected item and title, then close the drawer
-//        mDrawerList.setItemChecked(position, true);
-//        setTitle();
-//
-//
-//        mDrawerLayout.closeDrawer(mDrawerList);
+
     }
 
-    void connectSessionDialog(){
+    void connectSessionDialog() {
         LayoutInflater linf = LayoutInflater.from(this);
         final View inflator = linf.inflate(R.layout.ip_address, null);
         AlertDialog.Builder alert = new AlertDialog.Builder(this);
@@ -633,11 +728,10 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         final EditText et2 = (EditText) inflator.findViewById(R.id.team_name);
 
         alert.setPositiveButton("ok", new DialogInterface.OnClickListener() {
-            public void onClick(DialogInterface dialog, int whichButton)
-            {
-                String s1=et1.getText().toString();
-                String s2=et2.getText().toString();
-                socketConnect(s1,s2);
+            public void onClick(DialogInterface dialog, int whichButton) {
+                String s1 = et1.getText().toString();
+                String s2 = et2.getText().toString();
+                socketConnect(s1, s2);
                 //do operations using s1 and s2 here...
             }
         });
@@ -651,7 +745,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         alert.show();
     }
 
-    public void socketConnect (String session,String team ){
+    public void socketConnect(String session, String team) {
         JSONObject id = new JSONObject();
         try {
             id.put("team_id", team);
@@ -660,13 +754,13 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         } catch (JSONException ex) {
             ex.printStackTrace();
         }
-        Log.e("TAG","SEND ID");
-        mSocket.emit("id",id);///////////////////
+        Log.e("TAG", "SEND ID");
+        mSocket.emit("id", id);///////////////////
 
         SharedPreferences settings = getSharedPreferences("UserInfo", 0);
         SharedPreferences.Editor editor = settings.edit();
-        editor.putString("session_id",session);
-        editor.putString("team_id",team);
+        editor.putString("session_id", session);
+        editor.putString("team_id", team);
         editor.commit();
     }
 
@@ -696,44 +790,19 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         mDrawerToggle.onConfigurationChanged(newConfig);
     }
 
-
-
-    /**
-     * Fragment that appears in the "content_frame", shows a planet
-     */
-//    public static class PlanetFragment extends Fragment {
-//        public static final String ARG_PLANET_NUMBER = "planet_number";
-//
-//        public PlanetFragment() {
-//            // Empty constructor required for fragment subclasses
-//        }
-//
-//        @Override
-//        public View onCreateView(LayoutInflater inflater, ViewGroup container,
-//                                 Bundle savedInstanceState) {
-//            View rootView = inflater.inflate(R.layout.fragment_planet, container, false);
-//            int i = getArguments().getInt(ARG_PLANET_NUMBER);
-//            String planet = getResources().getStringArray(R.array.menu_array)[i];
-//
-//            int imageId = getResources().getIdentifier(planet.toLowerCase(Locale.getDefault()),
-//                    "drawable", getActivity().getPackageName());
-//            ((ImageView) rootView.findViewById(R.id.image)).setImageResource(imageId);
-//            getActivity().setTitle(planet);
-//            return rootView;
-//        }
-//    }
-
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
         // TODO Auto-generated method stub
     }
+
     float[] mGravity;
     float[] mGeomagnetic;
     boolean initValue = true; // First value to detect phone orientation offset
     float pitchOffset, yawOffset, rollOffset;
+
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (sendOrientation){
+        if (sendOrientation) {
 
             if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER)
                 mGravity = event.values;
@@ -747,25 +816,25 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
                     float orientation[] = new float[3];
                     SensorManager.getOrientation(R, orientation);
 
-                    float pitch = (float) (orientation[0] * 57.2958)-pitchOffset;
-                    float roll = (float) (orientation[1] * 57.2958)-rollOffset;
-                    float yaw = (float) (orientation[2] * 57.2958)-yawOffset ;
-                    if (initValue){
+                    float pitch = (float) (orientation[0] * 57.2958) - pitchOffset;
+                    float roll = (float) (orientation[1] * 57.2958) - rollOffset;
+                    float yaw = (float) (orientation[2] * 57.2958) - yawOffset;
+                    if (initValue) {
                         pitchOffset = pitch;
                         rollOffset = roll;
                         yawOffset = yaw;
                         initValue = false;
                     }
 //                    if(isConnected){
-                        JSONObject phoneOrientation = new JSONObject();
-                        try {
-                            phoneOrientation.put("x", yaw );
-                            phoneOrientation.put("y", roll);
-                            phoneOrientation.put("z", pitch);
-                        } catch (JSONException ex) {
-                            ex.printStackTrace();
-                        }
-                        mSocket.emit("phoneOrientation", phoneOrientation);
+                    JSONObject phoneOrientation = new JSONObject();
+                    try {
+                        phoneOrientation.put("x", yaw);
+                        phoneOrientation.put("y", roll);
+                        phoneOrientation.put("z", pitch);
+                    } catch (JSONException ex) {
+                        ex.printStackTrace();
+                    }
+                    mSocket.emit("phoneOrientation", phoneOrientation);
 //                    }
                 }
             }
@@ -787,11 +856,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
             Toast.makeText(getApplicationContext(), " IMAGE Received", Toast.LENGTH_SHORT).show();
             Log.d("Image URI", imageUri.toString());
             drawView.setImageBitmap(getApplicationContext(), imageUri.toString());
-//            drawView.setBitmap(imageUri.toString());
-            // Update UI to reflect image being shared
         }
-        ////
-
     }
 
     void handleSendMultipleImages(Intent intent) {
@@ -806,11 +871,11 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
     public void onPause() {
         closeCamera();
         stopBackgroundThread();
-//        mSensorManager.unregisterListener(this,mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR));
         mSensorManager.unregisterListener(this);
 //        isConnected = false;
         super.onPause();
     }
+
     @Override
     public void onResume(){
         super.onResume();
@@ -818,12 +883,19 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         mSensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI);
         mSensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_UI);
 
+        if (mTextureView.isAvailable()) {
+            openCamera(mTextureView.getWidth(), mTextureView.getHeight());
+        } else {
+            mTextureView.setSurfaceTextureListener(mSurfaceTextureListener);
+        }
+
         SharedPreferences settings = getSharedPreferences("UserInfo", 0);
         socketConnect( settings.getString("session_id", ""),settings.getString("team_id", ""));
         Toast.makeText(this, "Session: " + settings.getString("session_id", "")+ "  Team: " + settings.getString("team_id", ""), Toast.LENGTH_LONG).show();
 //        Toast.makeText(getApplicationContext(), " RESUMED!", Toast.LENGTH_SHORT).show();
 
     }
+
     /**
      * Closes the current {@link CameraDevice}.
      */
@@ -849,35 +921,6 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         }
     }
 
-//    @Override
-//    public void onStop()
-//    {
-//        super.onStop();
-//        Log.d(TAG, "Stop is called");
-//
-//    }
-//    @Override
-//    public void onBackPressed(){
-//        super.onBackPressed();
-//        Log.d(TAG, "star PRESSED is called");
-//        try{
-//            mCaptureSession.stopRepeating();
-//            mCameraDevice.close();////////////////////////
-//        } catch (CameraAccessException e) {
-//
-//            Toast.makeText(getApplicationContext(), " CameraAccessException", Toast.LENGTH_SHORT).show();
-//        }
-//        finish();
-//
-//    }
-//    @Override
-//    public void onDestroy()
-//    {
-//        super.onDestroy();
-//        Log.d(TAG, "Destroy is called");
-////        mCameraDevice.close();////////////////////////
-//    }
-
     /**
      * {@link TextureView.SurfaceTextureListener} handles several lifecycle events on a
      * {@link TextureView}.
@@ -897,11 +940,6 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
 
         @Override
         public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
-//            try{
-//                mCaptureSession.stopRepeating();
-//            } catch (CameraAccessException e) {
-//                e.printStackTrace();
-//            }
             return true;
         }
 
@@ -922,6 +960,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         mBackgroundThread.start();
         mBackgroundHandler = new Handler(mBackgroundThread.getLooper());
     }
+
     /**
      * Stops the background thread and its {@link Handler}.
      */
@@ -1171,11 +1210,11 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
             Log.v(TAG, "run()");
 
 
-                final Image.Plane[] planes = mImage.getPlanes();
-                final ByteBuffer buffer = planes[0].getBuffer();
-                buffer.rewind();
-                final byte[] data = new byte[buffer.capacity()];
-                buffer.get(data);
+            final Image.Plane[] planes = mImage.getPlanes();
+            final ByteBuffer buffer = planes[0].getBuffer();
+            buffer.rewind();
+            final byte[] data = new byte[buffer.capacity()];
+            buffer.get(data);
 
             final Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
             if (bitmap == null)
@@ -1188,12 +1227,10 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
             int blueColors = 0;
             int pixelCount = 0;
 
-            Bitmap b = Bitmap.createScaledBitmap(bitmap,120,120,false);
+            Bitmap b = Bitmap.createScaledBitmap(bitmap, 120, 120, false);
 
-            for (int y = b.getHeight()/2-10; y < b.getHeight()/2+10; y++)
-            {
-                for (int x = b.getWidth()/2-10; x < b.getWidth()/2+10; x++)
-                {
+            for (int y = b.getHeight() / 2 - 10; y < b.getHeight() / 2 + 10; y++) {
+                for (int x = b.getWidth() / 2 - 10; x < b.getWidth() / 2 + 10; x++) {
                     int c = b.getPixel(x, y);
                     pixelCount++;
                     redColors += Color.red(c);
@@ -1202,9 +1239,9 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
                 }
             }
             // calculate average of bitmap r,g,b values
-            red = (redColors/pixelCount);
-            green = (greenColors/pixelCount);
-            blue = (blueColors/pixelCount);
+            red = (redColors / pixelCount);
+            green = (greenColors / pixelCount);
+            blue = (blueColors / pixelCount);
 
             Log.d(TAG, " r1 == " + red);
             Log.d(TAG, " g1 == " + green);
@@ -1221,8 +1258,8 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
                 ex.printStackTrace();
             }
 
-            Log.e("TAG","SEND AVG COLOR");
-            mSocket.emit("color",avgColor);///////////////////
+            Log.e("TAG", "SEND AVG COLOR");
+            mSocket.emit("color", avgColor);///////////////////
         }
 
     }
@@ -1531,15 +1568,6 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
     private void showToast(final String text) {
 
         Log.v(TAG, "showToast()");
-
-        /*if (getApplicationContext() != null) {
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    Toast.makeText(getApplicationContext(), text, Toast.LENGTH_SHORT).show();
-                }
-            });
-        }*/
     }
 
     /**
@@ -1571,17 +1599,14 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
             captureBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
 //            captureBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
 
-            captureBuilder.set(CaptureRequest.CONTROL_AWB_MODE,CaptureRequest.CONTROL_AWB_MODE_OFF);
-            captureBuilder.set(CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE,CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_OFF);
-            captureBuilder.set(CaptureRequest.CONTROL_AE_MODE,CaptureRequest.CONTROL_AE_STATE_LOCKED);
+            captureBuilder.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF);
+            captureBuilder.set(CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE, CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_OFF);
+            captureBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_STATE_LOCKED);
             captureBuilder.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_OFF);
-
-
 
 
 //            captureBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
 //            captureBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
-
 
 
             // Orientation
@@ -1665,50 +1690,19 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
     @Override
     public void onClick(View view) {
         //respond to clicks
-
         switch (view.getId()) {
-
             case R.id.gal_btn:
-
-
-
-                /*getFromSdcard();*/
-
-//                try{
-//                    mCaptureSession.stopRepeating();
-//                    mCameraDevice.close();
-//                } catch (CameraAccessException e) {
-//
-//                    Toast.makeText(getApplicationContext(), " CameraAccessException", Toast.LENGTH_SHORT).show();
-//                }
-
                 // Create intent to Open Image applications like Gallery, Google Photos
                 Intent galleryIntent = new Intent(Intent.ACTION_PICK,
                         android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-// Start the Intent
+                // Start the Intent
                 startActivityForResult(galleryIntent, RESULT_LOAD_IMG);
-
-
-                // on button click for gallery
-                /*if(gridviewGallery.getVisibility() == View.GONE){
-
-                    gridviewGallery.setAdapter(new GalleryGridviewAdapter(getApplicationContext(), filePaths));
-                    gridviewGallery.setVisibility(View.VISIBLE);
-                }
-                else{
-
-                    gridviewGallery.setVisibility(View.GONE);
-                }*/
-
-
-
                 break;
 
-            case R.id.col_btn :
-
+            case R.id.col_btn:
                 // on button click for colors
-                new ColorPickerDialog(this, this, mPaint.getColor()).show();
-
+//                new ColorPickerDialog(this, this, mPaint.getColor()).show();
+                showColorDialog(colorArray, colorSelectState);
                 /*drawView.setColor("#6449b0");*/
                 /*drawView.setColor(Color.parseColor("#31698a"));*/
 
@@ -1758,7 +1752,6 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
                 break;
 
             case R.id.erase_btn:
-
                 //switch to erase - choose size
                 final Dialog brushDialogg = new Dialog(this);
                 brushDialogg.setTitle("Eraser size:");
@@ -1830,8 +1823,8 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
                     String imageDataString = encodeImage(b);
 
 
-                        Log.e("TAG","SEND IMAGE");
-                        mSocket.emit("image", imageDataString);
+                    Log.e("TAG", "SEND IMAGE");
+                    mSocket.emit("image", imageDataString);
                     Toast.makeText(getApplicationContext(), "Keep Still", Toast.LENGTH_LONG).show();
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -1848,6 +1841,165 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
                 takePicture();
 
                 break;
+
+            // Scanner Button Click
+            case R.id.scanner_btn:
+
+                Intent scanIntent = new Intent(MainActivity.this, ScannerActivity.class);
+                startActivityForResult(scanIntent, RESULT_QRCODE);
+
+                /*try {
+                    mCaptureSession.stopRepeating();
+                    mCameraDevice.close();
+                } catch (CameraAccessException e) {
+
+                    Toast.makeText(getApplicationContext(), " CameraAccessException", Toast.LENGTH_SHORT).show();
+                }*/
+                /*findViewById(R.id.ll_rgb_camera).setVisibility(View.GONE);
+
+                findViewById(R.id.ll_qr_camera).setVisibility(View.VISIBLE);
+
+                try {
+                    cameraSource.start(cameraView.getHolder());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }*/
+
+                break;
+
+//            case R.id.rgb_btn:
+
+
+
+                /*cameraSource.stop();
+                cameraSource.release();
+                barcodeDetector.release();
+
+                findViewById(R.id.ll_qr_camera).setVisibility(View.GONE);
+
+                findViewById(R.id.ll_rgb_camera).setVisibility(View.VISIBLE);*/
+
+                /*captureStillPicture();*/
+
+//                break;
+        }
+    }
+
+    // Color Palette Dialog View
+    private void showColorDialog(int[] colorArr, final ArrayList<Boolean> colorSelectState)  {
+        final Dialog dealDialog = new Dialog(MainActivity.this);
+        dealDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        dealDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dealDialog.setContentView(R.layout.color_palette);
+        dealDialog.setCancelable(true);
+        /*int[] colorArray = {R.color.black, R.color.aliceblue, R.color.aqua, R.color.aquamarine, R.color.azure,
+                R.color.bisque, R.color.brown, R.color.blueviolet, R.color.red, R.color.khaki};*/
+        /*Log.d(TAG, "colorArray length = " + colorArray.length);
+        Log.d(TAG, "colorArray[0]");
+        Log.d(TAG, "colorArray[0] = " + colorArray[0]);*/
+        for(int i = 0; i < colorSelectState.size(); i++ ){
+            if(colorSelectState.get(i)){
+                colorChanged(colorArr[i]);
+                break;
+            }
+        }
+        GridView gvColorPalette = (GridView) dealDialog.findViewById(R.id.gv_color);
+        final PaletteAdapter paletteAdapter = new PaletteAdapter(colorArr, colorSelectState, getApplicationContext());
+        gvColorPalette.setAdapter(paletteAdapter);
+        gvColorPalette.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                colorChanged(colorArray[position]);
+                /*colorSelectState.remove(position);
+                colorSelectState.add(position, true);*/
+                int size = colorSelectState.size();
+                colorSelectState.clear();
+                for(int i = 0; i < size; i++){
+                    if(i == position){
+                        colorSelectState.add(true);
+                    }else{
+                        colorSelectState.add(false);
+                    }
+                }
+                paletteAdapter.notifyDataSetChanged();
+                dealDialog.dismiss();
+            }
+        });
+        dealDialog.show();
+        /*new SpectrumDialog.Builder(getApplicationContext())
+                .setColors(R.array.demo_colors)
+                .setSelectedColorRes(R.color.seashell)
+                .setDismissOnColorSelected(true)
+                .setOnColorSelectedListener(new SpectrumDialog.OnColorSelectedListener() {
+                    @Override public void onColorSelected(boolean positiveResult, @ColorInt int color) {
+                        if(positiveResult) {
+                            Toast.makeText(getApplicationContext(), "Color selected: #" + Integer.toHexString(color).toUpperCase(), Toast.LENGTH_SHORT).show();
+                        } else {
+                            Toast.makeText(getApplicationContext(), "Dialog cancelled", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                }).build();*/
+    }
+    // Color Palette Gridview Adapter
+    public class PaletteAdapter extends BaseAdapter {
+        Context mContext;
+        int[] colorsArray;
+        ArrayList<Boolean> colorStateList;
+        public PaletteAdapter(int[] colorArray, ArrayList<Boolean> stateList ,Context context) {
+            mContext = context;
+            colorsArray = colorArray;
+            colorStateList = new ArrayList<>();
+            colorStateList.addAll(stateList);
+        }
+        @Override
+        public int getCount() {
+            return 8;
+        }
+        @Override
+        public Object getItem(int position) {
+            return null;
+        }
+        @Override
+        public long getItemId(int position) {
+            return 0;
+        }
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            MyViewHolder viewHolder = new MyViewHolder();
+            LayoutInflater inflater = LayoutInflater.from(mContext);
+            if(convertView == null){
+                convertView = inflater.inflate(R.layout.color_cell, null);
+                viewHolder = new MyViewHolder();
+                viewHolder.imageViewColor = (ImageView)convertView.findViewById(R.id.iv_color);
+                viewHolder.selectImage = (ImageView) convertView.findViewById(R.id.iv_selectImage);
+                viewHolder.defaultOverlay = (ImageView) convertView.findViewById(R.id.iv_overlayDefault);
+                viewHolder.selectOverlay= (ImageView) convertView.findViewById(R.id.iv_overlaySelected);
+                convertView.setTag(viewHolder);
+            }else{
+                viewHolder = (MyViewHolder)convertView.getTag();
+            }
+            Log.d(TAG, "Setting color");
+            viewHolder.imageViewColor.setBackgroundColor(colorsArray[position]);
+            if(colorStateList.get(position)){
+                viewHolder.selectImage.setVisibility(View.VISIBLE);
+                viewHolder.selectOverlay.setVisibility(View.VISIBLE);
+                viewHolder.defaultOverlay.setVisibility(View.GONE);
+//                viewHolder.selectOverlay.setBackground("@drawable/overlay1");
+//                android:background="@drawable/overlay2"/>
+//                iv_background.setImageBitmap(bmp);
+            }else{
+                viewHolder.selectImage.setVisibility(View.GONE);
+                viewHolder.selectOverlay.setVisibility(View.GONE);
+                viewHolder.defaultOverlay.setVisibility(View.VISIBLE
+                );
+            }
+            return convertView;
+        }
+        public class MyViewHolder{
+            ImageView imageViewColor;
+            ImageView selectImage;
+            ImageView selectOverlay;
+            ImageView defaultOverlay;
         }
     }
 
@@ -1855,38 +2007,81 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        try {
-            // When an Image is picked
-            if (requestCode == RESULT_LOAD_IMG && resultCode == RESULT_OK
-                    && null != data) {
-                // Get the Image from data
-                Toast.makeText(this, "IMAGE PICKED",
-                        Toast.LENGTH_LONG).show();
-                Uri selectedImage = data.getData();
-                String[] filePathColumn = { MediaStore.Images.Media.DATA };
 
-                // Get the cursor
-                Cursor cursor = getContentResolver().query(selectedImage,
-                        filePathColumn, null, null, null);
-                // Move to first row
-                cursor.moveToFirst();
+        switch (requestCode) {
 
-                int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
-                String imgDecodableString = cursor.getString(columnIndex);
-                cursor.close();
+            case RESULT_LOAD_IMG:
 
-                drawView.setBitmap(imgDecodableString);
+                try {
+                    // When an Image is picked
+                    if (resultCode == RESULT_OK && null != data) {
+                        // Get the Image from data
+                        Toast.makeText(this, "IMAGE PICKED",
+                                Toast.LENGTH_LONG).show();
+                        Uri selectedImage = data.getData();
+                        String[] filePathColumn = {MediaStore.Images.Media.DATA};
 
-                captureStillPicture();
+                        // Get the cursor
+                        Cursor cursor = getContentResolver().query(selectedImage,
+                                filePathColumn, null, null, null);
+                        // Move to first row
+                        cursor.moveToFirst();
+
+                        int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
+                        String imgDecodableString = cursor.getString(columnIndex);
+                        cursor.close();
+
+                        drawView.setBitmap(imgDecodableString);
+
+                        captureStillPicture();
 
 
-            } else {
-                Toast.makeText(this, "You haven't picked Image",
-                        Toast.LENGTH_LONG).show();
-            }
-        } catch (Exception e) {
-            Toast.makeText(this, "Something went wrong", Toast.LENGTH_LONG)
-                    .show();
+                    } else {
+                        Toast.makeText(this, "You haven't picked Image",
+                                Toast.LENGTH_LONG).show();
+                    }
+                } catch (Exception e) {
+                    Toast.makeText(this, "Something went wrong", Toast.LENGTH_LONG)
+                            .show();
+                }
+
+                break;
+
+
+            case RESULT_QRCODE:
+
+                Log.d(TAG, "QR Code");
+
+                try {
+                    if (resultCode == RESULT_OK && null != data) {
+
+                        String qrCode = data.getStringExtra("result");
+
+                        Log.d(TAG, "QR Code = " + qrCode);
+                        //String processing
+
+                        String[] qrParam = qrCode.split(",");
+
+                        // Send Socket Connect
+                        socketConnect(qrParam[0],qrParam[1]);
+
+                        barcodeInfo.setText(qrCode);
+
+                        captureStillPicture();
+
+
+                    } else {
+                        Toast.makeText(this, "You haven't picked Image",
+                                Toast.LENGTH_LONG).show();
+                    }
+                } catch (Exception e) {
+                    Toast.makeText(this, "Something went wrong", Toast.LENGTH_LONG)
+                            .show();
+                }
+
+                break;
+
+
         }
 
     }
@@ -1907,7 +2102,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         Log.v(TAG, "lockFocus()");
 
         /*try {*/
-            // This is how to tell the camera to lock focus.
+        // This is how to tell the camera to lock focus.
             /*mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
                     CameraMetadata.CONTROL_AF_TRIGGER_START);*/
 
@@ -1916,7 +2111,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
             mCaptureSession.capture(mPreviewRequestBuilder.build(), mCaptureCallback,
                     mBackgroundHandler);*/
 
-            captureStillPicture();
+        captureStillPicture();
 
 
         /*} catch (CameraAccessException e) {
@@ -1925,32 +2120,31 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
     }
 
 
-
     public static String encodeImage(byte[] imageByteArray) {
         return Base64.encodeToString(imageByteArray, Base64.DEFAULT);
     }
 
-// Clicking Uploading Button
-    public void ipAdd(View view){
+    // Clicking Uploading Button
+    public void ipAdd(View view) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         LayoutInflater inflater = this.getLayoutInflater();
         builder.setView(inflater.inflate(R.layout.ip_address, null))
-        .setPositiveButton(R.string.connect,new DialogInterface.OnClickListener(){
-            public void onClick(DialogInterface dialog, int id) {
-                Dialog f = (Dialog) dialog;
-                EditText URI;
-                URI = (EditText) f.findViewById(R.id.server_address);
-                ipAddress = URI.getText().toString();
-                connectSocket();
-                URI.setText(String.valueOf(ipAddress));
-            }
-        })
-        .setNegativeButton(R.string.disconnect, new DialogInterface.OnClickListener() {
-            public void onClick(DialogInterface dialog, int id) {
-                disconnectSocket();
-                dialog.dismiss();
-            }
-        });
+                .setPositiveButton(R.string.connect, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int id) {
+                        Dialog f = (Dialog) dialog;
+                        EditText URI;
+                        URI = (EditText) f.findViewById(R.id.server_address);
+                        ipAddress = URI.getText().toString();
+                        connectSocket();
+                        URI.setText(String.valueOf(ipAddress));
+                    }
+                })
+                .setNegativeButton(R.string.disconnect, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int id) {
+                        disconnectSocket();
+                        dialog.dismiss();
+                    }
+                });
         builder.create().show();
 
     }
@@ -1959,7 +2153,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
 
 
         try {
-            socket = new SocketIO (ipAddress);
+            socket = new SocketIO(ipAddress);
             socket.connect(new IOCallback() {
                 @Override
                 public void onMessage(JSONObject json, IOAcknowledge ack) {
@@ -1967,7 +2161,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
                         System.out.println("Server said:" + json.toString(2));
                     } catch (JSONException e) {
                         e.printStackTrace();
-                        Log.d("JSON ERROR","OCCURERED");
+                        Log.d("JSON ERROR", "OCCURERED");
                     }
                 }
 
@@ -2000,8 +2194,8 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
                 @Override
                 public void on(String event, IOAcknowledge ack, Object... args) {
                     System.out.println("Server triggered event '" + event + "'");
-                    if (event.equals("findColor")){
-                        Log.d("SOCKET "," FIND COLOR ");
+                    if (event.equals("findColor")) {
+                        Log.d("SOCKET ", " FIND COLOR ");
 //                        takePicture();// error
                         //http://stackoverflow.com/questions/5161951/android-only-the-original-thread-that-created-a-view-hierarchy-can-touch-its-vi
                         runOnUiThread(new Runnable() {
@@ -2011,16 +2205,17 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
                             }
                         });
                     }
-                    if(event.equals("helo")){
-                        socket.emit("HELO ","BACK");
+                    if (event.equals("helo")) {
+                        socket.emit("HELO ", "BACK");
                     }
                 }
             });
-        }catch (MalformedURLException e){
+        } catch (MalformedURLException e) {
             e.printStackTrace();
         }
     }
-    public void disconnectSocket(){
+
+    public void disconnectSocket() {
         socket.disconnect();
     }
 
@@ -2031,15 +2226,15 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
             String id = (String) args[0];
 //            try{
 //                String msg = data.getString("msg");
-                if(id.equals("findColor")){
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            Log.e("TAG", "TAKE PICTURE");
-                            takePicture();
-                        }
-                    });
-                }
+            if (id.equals("findColor")) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Log.e("TAG", "TAKE PICTURE");
+                        takePicture();
+                    }
+                });
+            }
 //            }
 
 //            Log.e("TAG",data.toString());
@@ -2054,7 +2249,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
     };
 
     @Override
-    public boolean onTouchEvent(MotionEvent event){
+    public boolean onTouchEvent(MotionEvent event) {
         this.mDetector.onTouchEvent(event);
         // Be sure to call the superclass implementation
         return super.onTouchEvent(event);
@@ -2069,7 +2264,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
     @Override
     public boolean onFling(MotionEvent event1, MotionEvent event2,
                            float velocityX, float velocityY) {
-        Log.d(DEBUG_TAG, "onFling: " + event1.toString()+event2.toString());
+        Log.d(DEBUG_TAG, "onFling: " + event1.toString() + event2.toString());
         drawView.setDrawingCacheEnabled(true);
         Bitmap bitmap = drawView.getDrawingCache();
         Bitmap newBitmap = Bitmap.createScaledBitmap(bitmap, 150, 200, false);
@@ -2082,7 +2277,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
             String imageDataString = encodeImage(b);
 
 
-            Log.e("TAG","SEND IMAGE");
+            Log.e("TAG", "SEND IMAGE");
             mSocket.emit("image", imageDataString);
             Toast.makeText(getApplicationContext(), "Keep Still", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
@@ -2136,7 +2331,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
         return true;
     }
 
-    public void postNote(){
+    public void postNote() {
         drawView.setDrawingCacheEnabled(true);
         Bitmap bitmap = drawView.getDrawingCache();
         Bitmap newBitmap = Bitmap.createScaledBitmap(bitmap, 150, 200, false);
@@ -2149,7 +2344,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener, 
             String imageDataString = encodeImage(b);
 
 
-            Log.e("TAG","SEND IMAGE");
+            Log.e("TAG", "SEND IMAGE");
             mSocket.emit("image", imageDataString);
             Toast.makeText(getApplicationContext(), "Keep Still", Toast.LENGTH_LONG).show();
         } catch (Exception e) {

@@ -8,7 +8,7 @@
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
     <string name="upload">Upload</string>
-    <string name="url">https://stickie2-jaskiratr.c9users.io</string>
+    <string name="url">https://stickie.space</string>
     <string name="session_hint">Session ID</string>
     <string name="team_hint">Pick a side</string>
 
@@ -24,13 +24,14 @@
 
     <string-array name="menu_array">
         <item>Connect</item>
-        <item>Disconnect</item>
-        <item>Recenter</item>
         <item>Invite</item>
+        <item>End Session</item>
+        <item>Recenter</item>
     </string-array>
     <string name="drawer_open">Open navigation drawer</string>
     <string name="drawer_close">Close navigation drawer</string>
     <string name="action_websearch">Web search</string>
     <string name="app_not_available">Sorry, there\'s no web browser available</string>
+    <string name="pick_color">Pick a Color</string>
 </resources>
 
