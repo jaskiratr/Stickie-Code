@@ -141,9 +141,9 @@ function connectSocket(sessionId, teamId){
         // gridY += ySpeed/5;
     });
     
-    socket.on("image_path", function(data) { // NOT BEING CALLED OMG!!!
+    socket.on("image_path", function(data) {
         image_path = "/images/"+ data;
-        console.log("Image Path set from socket "+ image_path); // THis doesnt update global var?
+        console.log("Image Path set from socket "+ image_path); 
     });
     
     socket.on("bufferImage", function(data) {
@@ -275,7 +275,7 @@ function newNote(imageData, posx, posy, noteName) {
     // image_path = "/images/out_"+noteName+".png";
     var texture = new THREE.TextureLoader().load( image_path );
     
-    console.log("Texture Image_path: "+ image_path); // ERROR: DIFFERENT
+    console.log("Texture Image_path: "+ image_path); 
     // console.log("Rest of the disp noteName"+ noteName);
     material = new THREE.MeshBasicMaterial({
         map: texture
@@ -395,7 +395,7 @@ function moveNote(data) {
     console.log("data.z"+ data.z );
     // console.log(" type notename "+ typeof(noteName));
     // console.log("move Object "+ noteName);
-    var object = scene.getObjectByName( noteName ); // NOTE NAME IS INCORRECT
+    var object = scene.getObjectByName( noteName ); 
     // console.log(object.name);
     object.position.x = data.x;
     object.position.y = data.y;
